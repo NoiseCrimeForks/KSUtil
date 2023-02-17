@@ -1,4 +1,4 @@
-﻿//// THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF 
+//// THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF 
 //// ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO 
 //// THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A 
 //// PARTICULAR PURPOSE. 
@@ -401,19 +401,20 @@ namespace KSUtil
                     string filePath = commands[Strings.Command_Play][0];
                     this.CheckFile(filePath);
 
+                    // Create Server
                     using (KStudioClient client = KStudio.CreateClient())
                     {
-                        Console.WriteLine(Strings.WaitToConnect);
+                        Console.WriteLine( "[{0}] {1}", Timestamps.TimeCode, Strings.WaitToConnect);
                         client.ConnectToService();
                         
-                        Console.WriteLine(Strings.StartPlayback);
+                        Console.WriteLine( "[{0}] {1}", Timestamps.TimeCode, Strings.StartPlayback);
                         Playback.PlaybackClip(client, filePath, streamList, loopCount);
-                        Console.WriteLine(Strings.StopPlayback);
+                        Console.WriteLine( "[{0}] {1}", Timestamps.TimeCode, Strings.StopPlayback);
                         
                         client.DisconnectFromService();
                     }
 
-                    Console.WriteLine(Strings.Done);
+                    Console.WriteLine( "[{0}] {1}", Timestamps.TimeCode, Strings.Done);
                     return CommandLineResult.SucceededExit;
                 }
 

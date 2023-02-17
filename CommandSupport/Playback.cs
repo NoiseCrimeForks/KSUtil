@@ -1,4 +1,4 @@
-﻿//// THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF 
+//// THIS CODE AND INFORMATION IS PROVIDED "AS IS" WITHOUT WARRANTY OF 
 //// ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO 
 //// THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A 
 //// PARTICULAR PURPOSE. 
@@ -68,17 +68,34 @@ namespace KSUtil
                 playback = client.CreatePlayback(filePath);
             }
 
+            Guid depthGuid = StreamSupport.ConvertStreamStringToGuid( "depth" );
+
+            SimpleSocketUDP udpServer = new SimpleSocketUDP();
+            udpServer.Server( "127.0.0.1", 27001 );
+
             // begin playback
-            using (playback)
+            using ( playback )
             {
                 playback.EndBehavior = KStudioPlaybackEndBehavior.Stop; // this is the default behavior
-                playback.Mode = KStudioPlaybackMode.TimingEnabled; // this is the default behavior
+                playback.Mode = KStudioPlaybackMode.TimingDisabled; // .TimingEnabled; // this is the default behavior
                 playback.LoopCount = loopCount;
-                playback.Start();
 
-                while (playback.State == KStudioPlaybackState.Playing)
+                // We start paused in case we want to step through
+                playback.StartPaused();
+
+                while ( playback.State == KStudioPlaybackState.Playing || playback.State == KStudioPlaybackState.Paused || playback.State == KStudioPlaybackState.Busy )
                 {
-                    Thread.Sleep(500);
+                    // Thread.Sleep( 1 ); // todo - add to configure
+
+                    // if updating frame while another step comes in we get invalid operation!
+                    if ( playback.State != KStudioPlaybackState.Busy )
+                    {
+#if UDP_MSG_TEXT
+                        ActOnTextMessage( playback, depthGuid );
+#else
+                        ActOnByteMessage( playback, depthGuid );
+#endif
+                    }
                 }
 
                 if (playback.State == KStudioPlaybackState.Error)
@@ -86,7 +103,198 @@ namespace KSUtil
                     throw new InvalidOperationException(Strings.ErrorPlaybackFailed);
                 }
             }
+
+            udpServer.CleanUp();
         }
+
+        /*
+        private static void ActOnTextMessage( KStudioPlayback playback, Guid depthGuid )
+        {
+            // Note - we don't buffer messages so we may miss some!
+            if ( !string.IsNullOrEmpty( SimpleSocketUDP.Message ) )
+            {
+                string lastMessage = SimpleSocketUDP.Message;
+                SimpleSocketUDP.Message = null;
+
+                switch ( lastMessage )
+                {
+                    case "STEP":
+                        if ( playback.State != KStudioPlaybackState.Paused )
+                        {
+                            playback.Mode = KStudioPlaybackMode.TimingDisabled;
+                            playback.Pause();
+                        }
+
+                        playback.StepOnce( depthGuid );
+                        break;
+
+                    case "PLAY":
+                        if ( playback.State == KStudioPlaybackState.Playing )
+                        {
+                            // Swith to Paused Mode - ready for stepping
+                            playback.Mode = KStudioPlaybackMode.TimingDisabled;
+                            playback.Pause();
+                        }
+                        else
+                        {
+                            playback.Mode = KStudioPlaybackMode.TimingEnabled;
+                            playback.Resume();
+                        }
+                        break;
+
+                    case "TIME":
+                        // Toggle playback Timing
+                        playback.Mode = ( playback.Mode == KStudioPlaybackMode.TimingEnabled ) ? KStudioPlaybackMode.TimingDisabled : KStudioPlaybackMode.TimingEnabled;
+
+                        // Start playing if paused
+                        if ( playback.State == KStudioPlaybackState.Paused )
+                            playback.Resume();
+
+                        break;
+
+                    case "EXIT":
+                        playback.Stop();
+                        break;
+                }
+            }
+        }
+       
+        private static void ActOnByteMessage( KStudioPlayback playback, Guid depthGuid )
+        {
+            // Note - we don't buffer messages so we may miss some!
+            if ( SimpleSocketUDP.MessageByte != 0 )
+            {
+                byte lastMessage = SimpleSocketUDP.MessageByte;
+                SimpleSocketUDP.MessageByte = 0;
+
+                switch ( lastMessage )
+                {
+                    case (byte)KSUtilCommands.Step:
+                        if ( playback.State != KStudioPlaybackState.Paused )
+                        {
+                            playback.Mode = KStudioPlaybackMode.TimingDisabled;
+                            playback.Pause();
+                        }
+
+                        playback.StepOnce( depthGuid );
+                        break;
+
+                    case (byte)KSUtilCommands.Play:
+                        if ( playback.State == KStudioPlaybackState.Playing )
+                        {
+                            // Swith to Paused Mode - ready for stepping
+                            playback.Mode = KStudioPlaybackMode.TimingDisabled;
+                            playback.Pause();
+                        }
+                        else
+                        {
+                            playback.Mode = KStudioPlaybackMode.TimingEnabled;
+                            playback.Resume();
+                        }
+                        break;
+
+                    case (byte)KSUtilCommands.Time:
+                        // Toggle playback Timing
+                        playback.Mode = ( playback.Mode == KStudioPlaybackMode.TimingEnabled ) ? KStudioPlaybackMode.TimingDisabled : KStudioPlaybackMode.TimingEnabled;
+
+                        // Start playing if paused
+                        if ( playback.State == KStudioPlaybackState.Paused )
+                            playback.Resume();
+
+                        break;
+
+                    case (byte)KSUtilCommands.Exit:
+                        playback.Stop();
+                        break;
+                }
+            }
+        }
+        */
+
+        private static void ActOnTextMessage( KStudioPlayback playback, Guid depthGuid )
+        {
+            // Note - we don't buffer messages so we may miss some!
+           
+            // Grab Server Message
+            string  lastMessage = SimpleSocketUDP.Message;
+            // Clear Server Storage
+            SimpleSocketUDP.Message = null;
+
+            if ( !string.IsNullOrEmpty( lastMessage ) )
+            {
+                byte byteID = 0;
+
+                switch ( lastMessage )
+                {
+                    case "STEP": byteID = ( byte )KSUtilCommands.Step; break;
+                    case "PLAY": byteID = ( byte )KSUtilCommands.Play; break;
+                    case "TIME": byteID = ( byte )KSUtilCommands.Time; break;
+                    case "EXIT": byteID = ( byte )KSUtilCommands.Exit; break;
+                    case "CALI": byteID = ( byte )KSUtilCommands.Calibration; break;
+                }
+
+                if ( byteID != 0 )
+                    ActOnServerMessage( byteID, playback, depthGuid );
+            }
+        }
+
+
+        private static void ActOnByteMessage( KStudioPlayback playback, Guid depthGuid )
+        {
+            // Note - we don't buffer messages so we may miss some!
+
+            // Grab Server Message
+            byte lastMessage = SimpleSocketUDP.MessageByte;
+            // Clear Server Storage
+            SimpleSocketUDP.MessageByte = 0;
+
+            if ( lastMessage != 0 )            
+                ActOnServerMessage( lastMessage, playback, depthGuid );            
+        }
+
+        private static void ActOnServerMessage( byte lastMessage, KStudioPlayback playback, Guid depthGuid )
+        {
+            switch ( lastMessage )
+            {
+                case ( byte )KSUtilCommands.Step:
+                    if ( playback.State != KStudioPlaybackState.Paused )
+                    {
+                        playback.Mode = KStudioPlaybackMode.TimingDisabled;
+                        playback.Pause();
+                    }
+
+                    playback.StepOnce( depthGuid );
+                    break;
+
+                case ( byte )KSUtilCommands.Play:
+                    if ( playback.State == KStudioPlaybackState.Playing )
+                    {
+                        // Swith to Paused Mode - ready for stepping
+                        playback.Mode = KStudioPlaybackMode.TimingDisabled;
+                        playback.Pause();
+                    }
+                    else
+                    {
+                        playback.Mode = KStudioPlaybackMode.TimingEnabled;
+                        playback.Resume();
+                    }
+                    break;
+
+                case ( byte )KSUtilCommands.Time:
+                    // Toggle playback Timing
+                    playback.Mode = ( playback.Mode == KStudioPlaybackMode.TimingEnabled ) ? KStudioPlaybackMode.TimingDisabled : KStudioPlaybackMode.TimingEnabled;
+
+                    // Start playing if paused
+                    if ( playback.State == KStudioPlaybackState.Paused )
+                        playback.Resume();
+
+                    break;
+
+                case ( byte )KSUtilCommands.Exit:
+                    playback.Stop();
+                    break;
+            }
+        }        
 
         /// <summary>
         /// Verifies that the streams selected for playback exist in the file and are capable of being played on the service
